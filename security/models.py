@@ -15,7 +15,7 @@ try:
 except ImportError:
     from django.contrib.contenttypes.generic import GenericForeignKey
 
-from json_field.fields import JSONField
+from jsonfield import JSONField
 
 from ipware.ip import get_ip
 
