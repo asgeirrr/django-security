@@ -1,5 +1,5 @@
 from six.moves.urllib.parse import urlparse, parse_qs
-
+import six
 from django.utils import timezone
 from django.template.defaultfilters import truncatechars
 from django.utils.encoding import force_text
@@ -8,8 +8,21 @@ from suds.transport.https import HttpAuthenticated
 from suds.transport.http import HttpTransport
 from suds.client import Client as DefaultClient
 
+from security.compatibility import extract_headers
 from security.config import LOG_REQUEST_BODY_LENGTH, LOG_RESPONSE_BODY_LENGTH
 from security.models import LoggedRequest, OutputLoggedRequest
+
+
+def stringify_dict(d):
+    def stringify(value):
+        if isinstance(value, six.binary_type):
+            return force_text(value)
+        elif isinstance(value, dict):
+            return stringify_dict(value)
+        else:
+            return value
+
+    return {k: stringify(v) for k, v in d.items()}
 
 
 class SecurityHttpTransportMixin:
@@ -33,7 +46,7 @@ class SecurityHttpTransportMixin:
             logged_kwargs.update({
                 'response_timestamp': timezone.now(),
                 'response_code': resp.code,
-                'response_headers': resp.headers.copy(),
+                'response_headers': extract_headers(resp).copy(),
                 'response_body': truncatechars(force_text(resp.message[:LOG_RESPONSE_BODY_LENGTH + 1],
                                                           errors='replace'), LOG_RESPONSE_BODY_LENGTH),
                 'status': LoggedRequest.get_status(resp.code)
@@ -47,6 +60,8 @@ class SecurityHttpTransportMixin:
             })
             raise
         finally:
+            # TODO: remove suds is fixed. (This is here to prevent nasty Python 3 related bugs with str vs. bytes.)
+            logged_kwargs = stringify_dict(logged_kwargs)
             output_logged_request = OutputLoggedRequest.objects.create(**logged_kwargs)
             for obj in self.related_objects or ():
                 output_logged_request.related_objects.create(content_object=obj)
